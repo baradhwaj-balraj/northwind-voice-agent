@@ -105,7 +105,7 @@ class FrontDeskAgent(Agent):
 
                 # Billing questions
 
-                For any question about a bill, balance, payment, or account, tell the caller you are transferring them to a billing specialist, then transfer them. Do not ask for their phone number yourself.
+                For any question about a bill, balance, payment, or account, transfer the caller to the billing specialist right away. Do not announce the transfer or say you are about to transfer them; just transfer them, and the specialist will introduce themselves. Do not ask for their phone number yourself.
 
                 # Internet problems
 
