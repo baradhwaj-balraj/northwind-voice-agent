@@ -12,7 +12,7 @@ These use the real AI brain through LiveKit Inference, so they need the keys in
 import pytest
 from livekit.agents import AgentSession, inference, llm, mock_tools
 
-from agent import BillingAgent, FrontDeskAgent
+from agent import BillingAgent, CallRecord, FrontDeskAgent
 
 
 def _judge_llm() -> llm.LLM:
@@ -26,7 +26,7 @@ def _judge_llm() -> llm.LLM:
 @pytest.mark.asyncio
 async def test_internet_problem_asks_for_zip_not_account() -> None:
     """Regression test: Sam used to demand an account before helping with internet problems."""
-    async with _judge_llm() as judge, AgentSession() as session:
+    async with _judge_llm() as judge, AgentSession(userdata=CallRecord()) as session:
         await session.start(FrontDeskAgent())
 
         result = await session.run(user_input="Hi, my internet isn't working.")
@@ -44,7 +44,7 @@ async def test_internet_problem_asks_for_zip_not_account() -> None:
 @pytest.mark.asyncio
 async def test_outage_zip_reports_outage() -> None:
     """A ZIP code on the outage list should trigger the outage check and an outage explanation."""
-    async with _judge_llm() as judge, AgentSession() as session:
+    async with _judge_llm() as judge, AgentSession(userdata=CallRecord()) as session:
         await session.start(FrontDeskAgent())
 
         await session.run(user_input="My internet isn't working.")
@@ -66,7 +66,7 @@ async def test_outage_zip_reports_outage() -> None:
 @pytest.mark.asyncio
 async def test_already_restarted_creates_ticket() -> None:
     """Regression test: Sam used to say he'd create a ticket without actually creating it."""
-    async with _judge_llm() as judge, AgentSession() as session:
+    async with _judge_llm() as judge, AgentSession(userdata=CallRecord()) as session:
         await session.start(FrontDeskAgent())
 
         await session.run(user_input="My internet isn't working.")
@@ -86,9 +86,27 @@ async def test_already_restarted_creates_ticket() -> None:
 
 
 @pytest.mark.asyncio
+async def test_incomplete_zip_is_not_used() -> None:
+    """Regression test: a four digit ZIP code was once padded to 10000 and saved."""
+    async with _judge_llm() as judge, AgentSession(userdata=CallRecord()) as session:
+        await session.start(FrontDeskAgent())
+
+        await session.run(user_input="My internet isn't working.")
+        result = await session.run(user_input="My ZIP code is one zero zero zero.")
+
+        # Exact check: no made-up ZIP code was saved to the call record
+        assert session.userdata.zip_code is None
+
+        await result.expect[-1].is_message(role="assistant").judge(
+            judge,
+            intent="Asks the caller to repeat or confirm their full five digit ZIP code.",
+        )
+
+
+@pytest.mark.asyncio
 async def test_outage_system_down_is_handled_gracefully() -> None:
     """If the outage check fails, Sam should apologize and keep helping, not crash or make things up."""
-    async with _judge_llm() as judge, AgentSession() as session:
+    async with _judge_llm() as judge, AgentSession(userdata=CallRecord()) as session:
         await session.start(FrontDeskAgent())
 
         with mock_tools(
@@ -112,7 +130,7 @@ async def test_outage_system_down_is_handled_gracefully() -> None:
 @pytest.mark.asyncio
 async def test_billing_question_transfers_to_max() -> None:
     """A billing question should hand the call to Max, the billing specialist."""
-    async with AgentSession() as session:
+    async with AgentSession(userdata=CallRecord()) as session:
         await session.start(FrontDeskAgent())
 
         result = await session.run(user_input="I have a question about my bill.")
@@ -127,7 +145,7 @@ async def test_billing_question_transfers_to_max() -> None:
 @pytest.mark.asyncio
 async def test_max_does_not_invent_charge_details() -> None:
     """Regression test: the billing agent once made up what a charge was for."""
-    async with _judge_llm() as judge, AgentSession() as session:
+    async with _judge_llm() as judge, AgentSession(userdata=CallRecord()) as session:
         await session.start(BillingAgent())
 
         await session.run(user_input="Hi, I have a question about my bill.")

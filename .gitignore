@@ -31,3 +31,6 @@ KMS
 
 # GitHub CLI
 .github/personal-instructions.md
+
+# Call summaries written by the agent (contain transcripts)
+call_logs/

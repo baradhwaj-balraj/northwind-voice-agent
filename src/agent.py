@@ -1,6 +1,10 @@
+import json
 import logging
 import random
 import textwrap
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -30,6 +34,24 @@ CUSTOMERS = {
 
 # Pretend list of ZIP codes that currently have an internet outage
 OUTAGE_ZIP_CODES = ["94107"]
+
+# Folder where a summary of each call is saved when the call ends
+CALL_LOGS_DIR = Path("call_logs")
+
+
+@dataclass
+class CallRecord:
+    """The facts of one call. The tools fill this in as the call happens."""
+
+    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    ended_at: str | None = None
+    reason: str | None = None  # "internet" or "billing"
+    customer_name: str | None = None
+    zip_code: str | None = None
+    outage_found: bool | None = None
+    ticket_number: int | None = None
+    transferred_to_billing: bool = False
+    actions: list[str] = field(default_factory=list)
 
 
 # Max, the billing specialist. Sam transfers callers to him for any billing question.
@@ -74,8 +96,14 @@ class BillingAgent(Agent):
         logger.info(f"Looking up account for {digits}")
 
         customer = CUSTOMERS.get(digits)
+        record = context.userdata
+        record.reason = "billing"
         if customer is None:
+            record.actions.append("Account lookup: no account found")
             return "No account was found for that phone number."
+
+        record.customer_name = customer["name"]
+        record.actions.append(f"Account lookup: found {customer['name']}")
 
         return (
             f"Account found. Name: {customer['name']}. Plan: {customer['plan']}. "
@@ -109,7 +137,7 @@ class FrontDeskAgent(Agent):
 
                 # Internet problems
 
-                You do not need an account or phone number to help with internet problems. Ask for the ZIP code where they have service and check for an outage. If there is an outage, explain it and do not troubleshoot. If there is no outage, walk them through restarting their router: unplug it, wait thirty seconds, plug it back in, then wait two minutes for the lights to come back on. Give one step at a time and wait for them to finish each step. If the caller already tried restarting, or restarting does not fix the problem, create a repair ticket. Never tell the caller you are about to create a ticket and then stop. Create it, then tell them the ticket number.
+                You do not need an account or phone number to help with internet problems. Ask for the ZIP code where they have service and check for an outage. If there is an outage, explain it and do not troubleshoot. If the outage check itself fails because of a system error, do not ask for the ZIP code again; tell the caller you could not check for outages right now and continue with troubleshooting. If there is no outage, walk them through restarting their router: unplug it, wait thirty seconds, plug it back in, then wait two minutes for the lights to come back on. Give one step at a time and wait for them to finish each step. If the caller already tried restarting, or restarting does not fix the problem, create a repair ticket. Never tell the caller you are about to create a ticket and then stop. Create it, then tell them the ticket number.
 
                 # Output rules
 
@@ -148,6 +176,9 @@ class FrontDeskAgent(Agent):
     async def transfer_to_billing(self, context: RunContext):
         """Transfer the caller to a billing specialist. Use this for any question about a bill, balance, payment, or account."""
         logger.info("Transferring caller to billing")
+        context.userdata.reason = "billing"
+        context.userdata.transferred_to_billing = True
+        context.userdata.actions.append("Transferred to billing (Max)")
         return (
             BillingAgent(chat_ctx=self.chat_ctx.copy(exclude_instructions=True)),
             "Transferring the caller to billing.",
@@ -163,6 +194,20 @@ class FrontDeskAgent(Agent):
         digits = "".join(ch for ch in zip_code if ch.isdigit())
         logger.info(f"Checking for outage in {digits}")
 
+        # Rule enforced in code, not just in the instructions: a ZIP code is exactly five digits.
+        # This stops a misheard or incomplete ZIP code from being checked or saved.
+        if len(digits) != 5:
+            context.userdata.actions.append(f"Rejected ZIP code '{digits}': not five digits")
+            return "That ZIP code is not five digits. Ask the caller to repeat their full five digit ZIP code."
+
+        record = context.userdata
+        record.reason = "internet"
+        record.zip_code = digits
+        record.outage_found = digits in OUTAGE_ZIP_CODES
+        record.actions.append(
+            f"Outage check for {digits}: {'outage' if record.outage_found else 'no outage'}"
+        )
+
         if digits in OUTAGE_ZIP_CODES:
             return "Yes, there is a known outage in this area. Technicians are working on it, and service should be back within four hours."
         return "No outage found in this area."
@@ -176,6 +221,8 @@ class FrontDeskAgent(Agent):
         """
         ticket_number = random.randint(1000, 9999)
         logger.info(f"Created ticket {ticket_number}: {problem_description}")
+        context.userdata.ticket_number = ticket_number
+        context.userdata.actions.append(f"Repair ticket {ticket_number}: {problem_description}")
         return f"Ticket number {ticket_number} has been created. A technician will call within one business day."
 
 
@@ -192,6 +239,8 @@ async def my_agent(ctx: JobContext):
 
     # Set up a voice AI pipeline using AssemblyAI, Fish Audio, and the LiveKit turn detector
     session = AgentSession(
+        # A blank call record that the tools fill in during the call
+        userdata=CallRecord(),
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
         # See all available models at https://docs.livekit.io/agents/models/stt/
         stt=inference.STT(model="deepgram/flux-general-en", language="en"),
@@ -229,6 +278,26 @@ async def my_agent(ctx: JobContext):
         # Audio model above.
         expressive=True,
     )
+
+    # When the call ends, save a summary of it as a JSON file in call_logs/
+    async def save_call_summary() -> None:
+        record = session.userdata
+        record.ended_at = datetime.now(timezone.utc).isoformat()
+
+        transcript = []
+        for item in session.history.items:
+            if item.type == "message" and item.role in ("user", "assistant"):
+                text = item.text_content
+                if text:
+                    speaker = "caller" if item.role == "user" else "agent"
+                    transcript.append(f"{speaker}: {text}")
+
+        CALL_LOGS_DIR.mkdir(exist_ok=True)
+        path = CALL_LOGS_DIR / f"call_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        path.write_text(json.dumps({**asdict(record), "transcript": transcript}, indent=2))
+        logger.info(f"Saved call summary to {path}")
+
+    ctx.add_shutdown_callback(save_call_summary)
 
     # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
