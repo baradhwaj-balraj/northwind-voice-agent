@@ -31,12 +31,16 @@ async def test_internet_problem_asks_for_zip_not_account() -> None:
 
         result = await session.run(user_input="Hi, my internet isn't working.")
 
-        await result.expect.next_event().is_message(role="assistant").judge(
-            judge,
-            intent=(
-                "Asks for the caller's ZIP code (or where they have service) to help "
-                "with the internet problem. Does NOT ask for a phone number or account."
-            ),
+        await (
+            result.expect.next_event()
+            .is_message(role="assistant")
+            .judge(
+                judge,
+                intent=(
+                    "Asks for the caller's ZIP code (or where they have service) to help "
+                    "with the internet problem. Does NOT ask for a phone number or account."
+                ),
+            )
         )
         result.expect.no_more_events()
 
@@ -53,12 +57,16 @@ async def test_outage_zip_reports_outage() -> None:
         result.expect.skip_next_event_if(type="message", role="assistant")
         result.expect.next_event().is_function_call(name="check_outage")
         result.expect.next_event().is_function_call_output()
-        await result.expect.next_event().is_message(role="assistant").judge(
-            judge,
-            intent=(
-                "Tells the caller there is a known outage in their area and that "
-                "service should be restored soon. Does not start router troubleshooting."
-            ),
+        await (
+            result.expect.next_event()
+            .is_message(role="assistant")
+            .judge(
+                judge,
+                intent=(
+                    "Tells the caller there is a known outage in their area and that "
+                    "service should be restored soon. Does not start router troubleshooting."
+                ),
+            )
         )
         result.expect.no_more_events()
 
@@ -78,9 +86,13 @@ async def test_already_restarted_creates_ticket() -> None:
         result.expect.skip_next_event_if(type="message", role="assistant")
         result.expect.next_event().is_function_call(name="create_repair_ticket")
         result.expect.next_event().is_function_call_output()
-        await result.expect.next_event().is_message(role="assistant").judge(
-            judge,
-            intent="Tells the caller a repair ticket was created and gives a ticket number.",
+        await (
+            result.expect.next_event()
+            .is_message(role="assistant")
+            .judge(
+                judge,
+                intent="Tells the caller a repair ticket was created and gives a ticket number.",
+            )
         )
         result.expect.no_more_events()
 
@@ -97,9 +109,13 @@ async def test_incomplete_zip_is_not_used() -> None:
         # Exact check: no made-up ZIP code was saved to the call record
         assert session.userdata.zip_code is None
 
-        await result.expect[-1].is_message(role="assistant").judge(
-            judge,
-            intent="Asks the caller to repeat or confirm their full five digit ZIP code.",
+        await (
+            result.expect[-1]
+            .is_message(role="assistant")
+            .judge(
+                judge,
+                intent="Asks the caller to repeat or confirm their full five digit ZIP code.",
+            )
         )
 
 
@@ -117,13 +133,17 @@ async def test_outage_system_down_is_handled_gracefully() -> None:
             result = await session.run(user_input="My ZIP code is 94107.")
 
         result.expect.contains_function_call(name="check_outage")
-        await result.expect[-1].is_message(role="assistant").judge(
-            judge,
-            intent=(
-                "Does not claim to know whether there is an outage. Acknowledges it "
-                "could not check, and offers another way to help, such as "
-                "troubleshooting or a repair ticket."
-            ),
+        await (
+            result.expect[-1]
+            .is_message(role="assistant")
+            .judge(
+                judge,
+                intent=(
+                    "Does not claim to know whether there is an outage. Acknowledges it "
+                    "could not check, and offers another way to help, such as "
+                    "troubleshooting or a repair ticket."
+                ),
+            )
         )
 
 
@@ -153,11 +173,15 @@ async def test_max_does_not_invent_charge_details() -> None:
         await session.run(user_input="Yes, that's correct.")
         result = await session.run(user_input="What exactly is my balance for?")
 
-        await result.expect[-1].is_message(role="assistant").judge(
-            judge,
-            intent=(
-                "Does NOT claim to know what the charge is for (for example, it must "
-                "not say it is the monthly service charge). Says it does not have that "
-                "detail and offers a follow-up from the billing team."
-            ),
+        await (
+            result.expect[-1]
+            .is_message(role="assistant")
+            .judge(
+                judge,
+                intent=(
+                    "Does NOT claim to know what the charge is for (for example, it must "
+                    "not say it is the monthly service charge). Says it does not have that "
+                    "detail and offers a follow-up from the billing team."
+                ),
+            )
         )

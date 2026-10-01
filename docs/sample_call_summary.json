@@ -1,0 +1,25 @@
+{
+  "started_at": "2026-10-01T19:53:57.744118+00:00",
+  "ended_at": "2026-10-01T19:55:20.341720+00:00",
+  "reason": "internet",
+  "customer_name": null,
+  "zip_code": "10000",
+  "outage_found": false,
+  "ticket_number": 8726,
+  "transferred_to_billing": false,
+  "actions": [
+    "Outage check for 10000: no outage",
+    "Repair ticket 8726: Customer reports internet is not working. They have already tried restarting the router, but the issue persists. No outage in ZIP code 10000."
+  ],
+  "transcript": [
+    "agent: Hello! I'm Sam from Northwind Fiber. How can I help you today?",
+    "caller: Hi. I'm having Internet problems.",
+    "agent: I'm sorry to hear that. To start, could you please give me the ZIP code where you have service?",
+    "caller: Yeah, it's one zero zero zero",
+    "agent: Thanks. I don't see any outages in your area, so let's try a few things. First, could you please unplug your router from the power?",
+    "caller: Yes. I already tried that, and it still doesn't work.",
+    "agent: I'm sorry that didn't do the trick. I've gone ahead and created a repair ticket for you. Your ticket number is 8 7 2 6, and a technician will reach out within one business day.",
+    "caller: Okay. Thank you.",
+    "agent: You're very welcome! Is there anything else I can help you with today?"
+  ]
+}

@@ -28,8 +28,18 @@ load_dotenv(".env.local")
 
 # Pretend customer database. A real company would use a real database here.
 CUSTOMERS = {
-    "5551234567": {"name": "Maria Lopez", "plan": "Fiber 500", "balance": "64 dollars and 99 cents", "due_date": "October 15"},
-    "5559876543": {"name": "James Carter", "plan": "Fiber 1 Gig", "balance": "0 dollars", "due_date": "October 20"},
+    "5551234567": {
+        "name": "Maria Lopez",
+        "plan": "Fiber 500",
+        "balance": "64 dollars and 99 cents",
+        "due_date": "October 15",
+    },
+    "5559876543": {
+        "name": "James Carter",
+        "plan": "Fiber 1 Gig",
+        "balance": "0 dollars",
+        "due_date": "October 20",
+    },
 }
 
 # Pretend list of ZIP codes that currently have an internet outage
@@ -43,7 +53,9 @@ CALL_LOGS_DIR = Path("call_logs")
 class CallRecord:
     """The facts of one call. The tools fill this in as the call happens."""
 
-    started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    started_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     ended_at: str | None = None
     reason: str | None = None  # "internet" or "billing"
     customer_name: str | None = None
@@ -82,7 +94,6 @@ class BillingAgent(Agent):
         await self.session.generate_reply(
             instructions="Introduce yourself as Max from billing and continue helping with the caller's billing question."
         )
-
 
     @function_tool
     async def lookup_account(self, context: RunContext, phone_number: str):
@@ -197,7 +208,9 @@ class FrontDeskAgent(Agent):
         # Rule enforced in code, not just in the instructions: a ZIP code is exactly five digits.
         # This stops a misheard or incomplete ZIP code from being checked or saved.
         if len(digits) != 5:
-            context.userdata.actions.append(f"Rejected ZIP code '{digits}': not five digits")
+            context.userdata.actions.append(
+                f"Rejected ZIP code '{digits}': not five digits"
+            )
             return "That ZIP code is not five digits. Ask the caller to repeat their full five digit ZIP code."
 
         record = context.userdata
@@ -222,7 +235,9 @@ class FrontDeskAgent(Agent):
         ticket_number = random.randint(1000, 9999)
         logger.info(f"Created ticket {ticket_number}: {problem_description}")
         context.userdata.ticket_number = ticket_number
-        context.userdata.actions.append(f"Repair ticket {ticket_number}: {problem_description}")
+        context.userdata.actions.append(
+            f"Repair ticket {ticket_number}: {problem_description}"
+        )
         return f"Ticket number {ticket_number} has been created. A technician will call within one business day."
 
 
@@ -294,7 +309,9 @@ async def my_agent(ctx: JobContext):
 
         CALL_LOGS_DIR.mkdir(exist_ok=True)
         path = CALL_LOGS_DIR / f"call_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        path.write_text(json.dumps({**asdict(record), "transcript": transcript}, indent=2))
+        path.write_text(
+            json.dumps({**asdict(record), "transcript": transcript}, indent=2)
+        )
         logger.info(f"Saved call summary to {path}")
 
     ctx.add_shutdown_callback(save_call_summary)
@@ -325,7 +342,7 @@ async def my_agent(ctx: JobContext):
 
     # Join the room and connect to the user
     await ctx.connect()
-    #Make the agent speak first, instead of waiting for the caller 
+    # Make the agent speak first, instead of waiting for the caller
     await session.generate_reply(
         instructions="Greet the caller as Sam from Northwind Fiber and ask how you can help."
     )

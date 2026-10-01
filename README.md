@@ -1,153 +1,121 @@
-<a href="https://livekit.io/">
-  <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
-</a>
+# Northwind Fiber: Voice Support Agent
 
-# LiveKit Agents starter for Python
+A voice customer-support line for **Northwind Fiber**, a fictional home internet provider. Callers talk to it like a real support line: it troubleshoots internet problems, opens repair tickets, transfers billing questions to a specialist agent, and saves a structured summary of every call.
 
-A starter project for building voice AI apps with [LiveKit Agents for Python](https://github.com/livekit/agents) and [LiveKit Cloud](https://cloud.livekit.io/).
+Built with [LiveKit Agents](https://docs.livekit.io/agents/) (Python), using Deepgram for speech recognition, Cartesia for speech, and Gemma 4 as the language model.
 
-The starter includes:
+> 🎥 **Demo video:** coming soon
 
-- A simple [voice AI assistant](https://docs.livekit.io/agents/start/voice-ai/) to extend and customize.
-- A voice pipeline built on [LiveKit Inference](https://docs.livekit.io/agents/models/inference/), which gives you access to [models](https://docs.livekit.io/agents/models/) from top labs with no extra configuration:
-  - The default LLM is Gemma 4 31B, an open-weight model [hosted by LiveKit](https://docs.livekit.io/agents/models/llm/livekit/) and tuned for voice AI.
-  - The default TTS is [Fish Audio S2.1 Pro](https://docs.livekit.io/agents/models/tts/fishaudio/), an expressive and cost-effective voice.
-  - More than 50 other models are available from OpenAI, Cartesia, Deepgram, and other providers.
-  - [Realtime models](https://docs.livekit.io/agents/models/realtime/) and many others are available through the [plugin ecosystem](https://docs.livekit.io/agents/models/#plugins).
-- [Expressive mode](https://docs.livekit.io/agents/models/tts/expressive/), on by default, so your agent's voice carries emotion and pacing that fit the conversation.
-- [Keyterms](https://docs.livekit.io/agents/models/stt/keyterms/), on by default, so speech recognition gets your names, brands, and jargon right, including names it picks up during the conversation, like a caller's.
-- [LiveKit Turn Detector](https://docs.livekit.io/agents/logic/turns/turn-detector/), which knows when the user has finished speaking, in 14 languages.
-- [Adaptive interruption handling](https://docs.livekit.io/agents/logic/turns/adaptive-interruption-handling/), which tells a real interruption from an "uh-huh" or background noise, so your agent doesn't stop talking when it shouldn't.
-- [Background voice cancellation](https://docs.livekit.io/transport/media/noise-cancellation/).
-- Session transcripts, traces, and recordings from LiveKit [Agent Observability](https://docs.livekit.io/testing/observability/).
-- [Simulations](https://docs.livekit.io/testing/simulations/) that test full conversations with your agent, run in CI on every merge to `main`.
-- A `Dockerfile` for [deploying to LiveKit Cloud](https://docs.livekit.io/deploy/agents/).
+---
 
-The starter works with any [custom web or mobile frontend](https://docs.livekit.io/frontends/) or with [telephony](https://docs.livekit.io/telephony/).
+## What it does
 
-## Using coding agents
+- **Front desk agent ("Sam")**: greets the caller and handles internet problems:
+  - checks for a **known outage** in the caller's ZIP code
+  - walks them through a **router restart**, one step at a time
+  - opens a **repair ticket** if that doesn't fix it
+- **Billing specialist ("Max")**: Sam **hands the call off** to Max for billing questions. Max has his own voice and instructions, already knows what the caller told Sam, verifies the account by phone number, and explains the balance.
+- **Call summaries**: when a call ends, a structured JSON record (reason, ZIP code, outage result, ticket number, actions taken, full transcript) is saved to `call_logs/`. This is the kind of output a business could feed into a CRM or ticketing system.
+- **Guardrails**: declines off-topic or inappropriate requests and does not invent facts it doesn't have.
 
-This project works with coding agents like [Claude Code](https://claude.com/product/claude-code), [Cursor](https://www.cursor.com/), and [Codex](https://openai.com/codex/).
+## Architecture
 
-LiveKit offers both a CLI and an [MCP server](https://docs.livekit.io/reference/developer-tools/docs-mcp/) for browsing and searching its documentation. Search returns short excerpts, so fetch the full page to read the details:
-
-```console
-lk docs search "testing my agent"
-lk docs get-page /testing/unit-tests
+```mermaid
+flowchart LR
+    Caller((Caller)) <-->|voice| STT[Deepgram Flux<br/>speech to text]
+    STT --> Sam
+    subgraph Agents
+        Sam[Sam<br/>front desk]
+        Max[Max<br/>billing specialist]
+    end
+    Sam -->|check_outage| Outages[(Outage list)]
+    Sam -->|create_repair_ticket| Tickets[(Tickets)]
+    Sam -->|transfer_to_billing<br/>handoff + conversation history| Max
+    Max -->|lookup_account| Accounts[(Customer accounts)]
+    Sam & Max --> TTS[Cartesia / Fish Audio<br/>text to speech] -->|voice| Caller
+    Sam & Max -.->|fill in| Record[[Call record]] -.->|on hang-up| Logs[call_logs/*.json]
 ```
 
-The project also includes an [`AGENTS.md`](AGENTS.md) file and LiveKit's [agent skills](https://docs.livekit.io/intro/coding-agents/#agent-skills), so your coding agent follows LiveKit's best practices for workflows, handoffs, and testing, and tries its changes with the [agent debugger](https://docs.livekit.io/testing/debugger/). See the [coding agents guide](https://docs.livekit.io/intro/coding-agents/) for more details, including MCP server setup and how to update the skill.
+Each turn: the caller's speech is transcribed, the active agent's LLM decides whether to reply or call a tool, and the reply is spoken back. A turn detector decides when the caller has finished speaking.
 
-## Dev setup
+| Layer | Choice |
+|---|---|
+| Framework | LiveKit Agents (Python), LiveKit Cloud |
+| Speech to text | Deepgram Flux (via LiveKit Inference) |
+| LLM | Gemma 4 31B (via LiveKit Inference) |
+| Text to speech | Cartesia Sonic 3 (Sam), Fish Audio S2.1 Pro (Max) |
+| Testing | pytest + LiveKit's agent testing framework, with an LLM judge |
 
-Install the [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/), version 2.18.8 or later:
+## How it works
 
-- **macOS:** `brew install livekit-cli`
-- **Linux:** `curl -sSL https://get.livekit.io/cli | bash`
-- **Windows:** `winget install LiveKit.LiveKitCLI`
+All of the agent code is in [`src/agent.py`](src/agent.py).
 
-Check your version with `lk --version`. To update an existing install, see [Update the CLI](https://docs.livekit.io/reference/developer-tools/livekit-cli/#updates).
+- **Agents are classes.** `FrontDeskAgent` (Sam) and `BillingAgent` (Max) each define instructions, a model, an optional voice, and tools.
+- **Tools are Python functions** marked with `@function_tool`. The docstring tells the LLM *when* to use the tool, and the code does the work. The "databases" are small in-memory dictionaries standing in for real systems.
+- **A handoff is a tool that returns another agent.** `transfer_to_billing` returns a `BillingAgent` and passes it the conversation history (without Sam's instructions), so Max doesn't ask the caller to repeat themselves.
+- **Shared call state.** Each call gets a `CallRecord` (session `userdata`). Tools write facts into it as they run, so the summary comes from what the code actually did rather than what the model remembers. A shutdown callback writes it to disk when the call ends.
+- **Prompts for behavior, code for hard rules.** Conversational behavior lives in the instructions. Rules that must never break, like "a ZIP code is exactly five digits", are enforced inside the tool.
 
-Then create a project from this template. The CLI clones the template and configures your environment:
+## Testing
 
-```console
-lk cloud auth
-lk agent init my-agent --template agent-starter-python
+Seven turn-level tests in [`tests/test_agent.py`](tests/test_agent.py) run text-only conversations against the real model and check both **structure** (was the right tool called? did the handoff happen? was bad data kept out of the call record?) and **meaning** (an LLM judge checks that the reply matches the intended outcome).
+
+| Test | Checks that… |
+|---|---|
+| `internet_problem_asks_for_zip_not_account` | Sam asks for a ZIP code, not an account |
+| `outage_zip_reports_outage` | an outage ZIP triggers the outage check and is reported |
+| `already_restarted_creates_ticket` | a ticket is *actually created*, not just announced |
+| `incomplete_zip_is_not_used` | a misheard four-digit ZIP is rejected and never saved |
+| `outage_system_down_is_handled_gracefully` | if the outage system errors (mocked), Sam admits it and keeps helping |
+| `billing_question_transfers_to_max` | billing questions hand off to Max |
+| `max_does_not_invent_charge_details` | Max doesn't make up what a charge is for |
+
+```bash
+uv run pytest
 ```
 
-<details>
-<summary>Set up the project manually</summary>
+[`scenarios.yaml`](scenarios.yaml) also defines full-conversation simulations (a simulated caller graded against expectations) that can be run with `lk agent simulate text --scenarios scenarios.yaml`.
 
-Clone the repository and install dependencies into a virtual environment with [uv](https://docs.astral.sh/uv/):
+## Problems I found and fixed
 
-```console
-git clone https://github.com/livekit-examples/agent-starter-python.git
-cd agent-starter-python
-uv sync
+Most of the work on this project was testing it like a difficult caller, reading transcripts, and fixing what went wrong:
+
+1. **Rules leaked between tasks.** "Verify the account before discussing it" was meant for billing, but Sam applied it to everything and refused to troubleshoot without an account. *Fix:* split the instructions into separate sections for billing and internet problems, and state explicitly that internet help needs no account.
+2. **The agent announced actions without doing them.** Sam said "I'll create a ticket for you" and then never called the tool. Later, a test caught the same bug with transfers. *Fix:* explicit instructions to act instead of announcing, plus tests that assert the tool call actually happened.
+3. **Hallucinated details.** The billing agent confidently said a balance was the "monthly service charge", which isn't in the data. *Fix:* only state facts from the account lookup and offer a follow-up otherwise, locked in with a test.
+4. **Bad data saved silently.** The call summary revealed that a misheard four-digit ZIP code ("1 0 0 0") had been padded to `10000`, checked, and saved ([see the raw record](docs/sample_call_summary.json)). *Fix:* validation inside the tool, which the model cannot bypass.
+5. **One fix changed behavior elsewhere.** After adding ZIP validation, the test suite showed that when the outage system was down, Sam now asked for the ZIP code again instead of moving on. *Fix:* instructions for the system-error case. This is the reason to rerun all tests after every change.
+
+## Running it yourself
+
+**Requirements:** Python 3.10+, [uv](https://docs.astral.sh/uv/), the [LiveKit CLI](https://github.com/livekit/livekit-cli), and a free [LiveKit Cloud](https://cloud.livekit.io/) account. All models run through LiveKit Inference, so no other API keys are needed.
+
+```bash
+cp .env.example .env.local            # then fill in your LiveKit URL, API key, and secret
+                                       # (from your project's settings in LiveKit Cloud)
+uv sync                                # install dependencies
+uv run python src/agent.py download-files
+lk agent dev                           # start the agent, then talk to it in the Agent Console
 ```
 
-Sign up for [LiveKit Cloud](https://cloud.livekit.io/), then copy `.env.example` to `.env.local` and fill it in. To have the CLI write your project's URL and API keys into the file instead, run:
+Try saying: *"My internet isn't working"* (ZIP **94107** has a simulated outage; any other five-digit ZIP doesn't), or *"I have a question about my bill"* (test phone number **555-123-4567**).
 
-```console
-lk cloud auth
-lk app env --write --destination .env.local
+## Project structure
+
+```
+src/agent.py               # agents, tools, call record, and session setup
+tests/test_agent.py        # turn-level tests
+scenarios.yaml             # full-conversation simulations
+docs/sample_call_summary.json
 ```
 
-</details>
+## What I'd add next
 
-## Run the agent
+- A real phone number through LiveKit telephony (SIP)
+- An "escalate to a human" path
+- Real data sources (a database for accounts, an API for tickets) behind the same tools
+- Deployment to LiveKit Cloud so it runs without a laptop
 
-The `lk agent console`, `lk agent dev`, and `lk agent debugger` commands run your agent on your own machine. To talk to it in your terminal:
+## Credits
 
-```console
-lk agent console
-```
-
-To connect it to LiveKit Cloud so a frontend, a phone call, or the [Agent Console](https://docs.livekit.io/testing/agent-console/) can reach it:
-
-```console
-lk agent dev
-```
-
-To let a coding agent or a script test it one text turn at a time, use the [agent debugger](https://docs.livekit.io/testing/debugger/). Each turn prints the agent's reply along with the tool calls and handoffs behind it:
-
-```console
-lk agent debugger start
-lk agent debugger say "Hi, what can you do?"
-lk agent debugger stop
-```
-
-In production, run the agent directly:
-
-```console
-uv run src/agent.py start
-```
-
-## Frontends and telephony
-
-Pair the agent with a prebuilt frontend starter, or add telephony:
-
-| Platform | Link | Description |
-|----------|----------|-------------|
-| **Web** | [`livekit-examples/agent-starter-react`](https://github.com/livekit-examples/agent-starter-react) | Web voice AI assistant with React & Next.js |
-| **iOS/macOS** | [`livekit-examples/agent-starter-swift`](https://github.com/livekit-examples/agent-starter-swift) | Native iOS, macOS, and visionOS voice AI assistant |
-| **Flutter** | [`livekit-examples/agent-starter-flutter`](https://github.com/livekit-examples/agent-starter-flutter) | Cross-platform voice AI assistant app |
-| **React Native** | [`livekit-examples/voice-assistant-react-native`](https://github.com/livekit-examples/voice-assistant-react-native) | Native mobile app with React Native & Expo |
-| **Android** | [`livekit-examples/agent-starter-android`](https://github.com/livekit-examples/agent-starter-android) | Native Android app with Kotlin & Jetpack Compose |
-| **Web Embed** | [`livekit-examples/agent-starter-embed`](https://github.com/livekit-examples/agent-starter-embed) | Voice AI widget for any website |
-| **Telephony** | [Documentation](https://docs.livekit.io/telephony/) | Add inbound or outbound calling to your agent |
-
-For more options, see the [frontend guide](https://docs.livekit.io/frontends/).
-
-## Testing and debugging
-
-Simulations run full multi-turn conversations between a simulated user and your agent on LiveKit Cloud, then judge each transcript. The scenarios live in [`scenarios.yaml`](scenarios.yaml). Run them locally with the CLI:
-
-```console
-lk agent simulate text --scenarios scenarios.yaml
-```
-
-The `Simulations` workflow in [`.github/workflows/simulations.yml`](.github/workflows/simulations.yml) runs the same file on every merge to `main`, and on demand from the Actions tab. It doesn't run on every pull request push because each run uses real inference. See the [simulations guide](https://docs.livekit.io/testing/simulations/) for how to write scenarios and read results.
-
-To check a change turn by turn without a live session, use the [agent debugger](https://docs.livekit.io/testing/debugger/) shown in [Run the agent](#run-the-agent).
-
-To debug a running agent, open it in the [Agent Console](https://docs.livekit.io/testing/agent-console/). It shows events, tool calls, and model timing as you talk to the agent. To stream logs from a deployed agent, run `lk agent logs`.
-
-## Using this template for your own project
-
-After you create your own project from this template:
-
-- **Commit `uv.lock`.** The template doesn't track it, but your project should, for reproducible builds. If you deploy to LiveKit Cloud, commit `livekit.toml` too.
-- **Add repository secrets.** Add `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` as [repository secrets](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-what-your-workflow-does/using-secrets-in-github-actions) so the simulations can run in CI.
-
-## Deploying to production
-
-To deploy the agent to LiveKit Cloud or another environment with the included `Dockerfile`, see the [deployment guide](https://docs.livekit.io/deploy/agents/).
-
-## Self-hosted LiveKit
-
-You can self-host LiveKit instead of using LiveKit Cloud. See the [self-hosting guide](https://docs.livekit.io/transport/self-hosting/local/). If you self-host, use [model plugins](https://docs.livekit.io/agents/models/#plugins) instead of LiveKit Inference, and remove the [LiveKit Cloud noise cancellation](https://docs.livekit.io/transport/media/noise-cancellation/) plugin.
-
-## License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+Built on LiveKit's [agent-starter-python](https://github.com/livekit-examples/agent-starter-python) template. Developed as a learning project with help from Claude as a coding assistant.
